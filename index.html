@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volcano Wrangler</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font 'Press Start 2P' -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Use Inter as a fallback, but prioritize the game font */
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+        }
+        /* Custom game font */
+        .game-font {
+            font-family: 'Press Start 2P', cursive;
+        }
+        
+        /* Custom styles for the canvas and game elements */
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #87CEEB; /* Sky blue */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+        }
+
+        /* Message box for start/game over */
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 4px solid #333;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-4xl mx-auto">
+        <!-- Game Title -->
+        <h1 class="text-3xl md:text-4xl game-font text-center text-orange-400 mb-4">Volcano Wrangler</h1>
+
+        <!-- Game Info Bar -->
+        <div class="flex justify-between items-center bg-gray-800 p-4 rounded-lg shadow-lg mb-4 game-font text-lg">
+            <div>
+                Score: <span id="score" class="text-yellow-400">0</span>
+            </div>
+            <div>
+                Lives: <span id="lives" class="text-red-500">3</span>
+            </div>
+        </div>
+
+        <!-- Game Canvas Container -->
+        <div class="relative w-full" style="padding-bottom: 60%;"> <!-- Aspect ratio container -->
+            <canvas id="gameCanvas" class="absolute top-0 left-0 w-full h-full"></canvas>
+
+            <!-- Start/Game Over Message Box -->
+            <div id="messageBox" class="p-8 rounded-lg shadow-xl text-center text-gray-900 game-font hidden">
+                <h2 id="messageTitle" class="text-2xl mb-4">Game Over</h2>
+                <p id="messageScore" class="mb-6">Final Score: 0</p>
+                <button id="startButton" class="game-font bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg shadow-md transition-colors duration-200">
+                    Play Again
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+
+            const scoreEl = document.getElementById('score');
+            const livesEl = document.getElementById('lives');
+            
+            const messageBox = document.getElementById('messageBox');
+            const messageTitle = document.getElementById('messageTitle');
+            const messageScore = document.getElementById('messageScore');
+            const startButton = document.getElementById('startButton');
+
+            let gameWidth, gameHeight;
+            let lives, score, gameRunning, gameOver;
+            
+            let player, fireballs, fireballSpawnTimer;
+            const fireballSpawnInterval = 50; // Ticks before new fireball
+            
+            // --- Game Objects ---
+
+            const playerDefaults = {
+                width: 50,
+                height: 30,
+                speed: 8,
+                dx: 0
+            };
+
+            // Player (Jeep)
+            function initPlayer() {
+                player = {
+                    ...playerDefaults,
+                    x: (gameWidth - playerDefaults.width) / 2,
+                    y: gameHeight - playerDefaults.height - 10 // 10px from bottom
+                };
+            }
+
+            function drawPlayer() {
+                // Jeep Body
+                ctx.fillStyle = '#228B22'; // Forest Green
+                ctx.fillRect(player.x, player.y, player.width, player.height - 10);
+                
+                // Jeep Cabin
+                ctx.fillStyle = '#1A681A'; // Darker Green
+                ctx.fillRect(player.x + 5, player.y - 10, player.width - 25, 10);
+                
+                // Windshield
+                ctx.fillStyle = '#ADD8E6'; // Light Blue
+                ctx.fillRect(player.x + 6, player.y - 9, player.width - 27, 8);
+
+                // Wheels (simple circles)
+                ctx.fillStyle = '#333'; // Dark Gray
+                ctx.beginPath();
+                ctx.arc(player.x + 10, player.y + player.height - 5, 8, 0, Math.PI * 2);
+                ctx.arc(player.x + player.width - 10, player.y + player.height - 5, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            function updatePlayer() {
+                player.x += player.dx;
+
+                // Keep player within bounds
+                if (player.x < 0) {
+                    player.x = 0;
+                }
+                if (player.x + player.width > gameWidth) {
+                    player.x = gameWidth - player.width;
+                }
+            }
+
+            // Fireballs
+            function initFireballs() {
+                fireballs = [];
+                fireballSpawnTimer = fireballSpawnInterval;
+            }
+
+            function createFireball(volcanoPeakX, volcanoPeakY) {
+                const size = Math.random() * 10 + 10; // 10 to 20px
+                const speed = Math.random() * 2 + 2; // 2 to 4 px/frame
+                
+                // Spawn near the volcano peak, with some horizontal spread
+                const spawnX = volcanoPeakX + (Math.random() - 0.5) * 40; 
+                
+                fireballs.push({
+                    x: spawnX,
+                    y: volcanoPeakY,
+                    width: size,
+                    height: size,
+                    speed: speed,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.1
+                });
+            }
+
+            function updateFireballs(volcanoPeakX, volcanoPeakY) {
+                fireballSpawnTimer--;
+                if (fireballSpawnTimer <= 0) {
+                    createFireball(volcanoPeakX, volcanoPeakY);
+                    fireballSpawnTimer = fireballSpawnInterval - (score / 100); // Spawn faster as score increases
+                    if (fireballSpawnTimer < 10) fireballSpawnTimer = 10; // Minimum spawn time
+                }
+
+                for (let i = fireballs.length - 1; i >= 0; i--) {
+                    const fireball = fireballs[i];
+                    fireball.y += fireball.speed;
+                    fireball.rotation += fireball.rotationSpeed;
+
+                    // Remove if off-screen
+                    if (fireball.y - fireball.height > gameHeight) {
+                        fireballs.splice(i, 1);
+                    }
+                }
+            }
+
+            function drawFireballs() {
+                fireballs.forEach(fireball => {
+                    ctx.save();
+                    ctx.translate(fireball.x + fireball.width / 2, fireball.y + fireball.height / 2);
+                    ctx.rotate(fireball.rotation);
+                    
+                    // Fiery colors
+                    ctx.fillStyle = Math.random() > 0.3 ? '#FF4500' : '#FFA500'; // Orange-Red / Orange
+                    
+                    // Draw a simple rock/flame shape (a slightly squished circle)
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, fireball.width / 2, fireball.height / 2 - 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Smaller yellow center
+                    ctx.fillStyle = '#FFFF00'; // Yellow
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, fireball.width / 4, fireball.height / 4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                });
+            }
+
+            // --- Background ---
+            function drawBackground() {
+                // Ground
+                ctx.fillStyle = '#228B22'; // Forest Green
+                ctx.fillRect(0, gameHeight - 30, gameWidth, 30);
+
+                // Mountains (distant)
+                ctx.fillStyle = '#696969'; // Dim Gray
+                drawTriangle(50, gameHeight - 30, 200, gameHeight - 180, 350, gameHeight - 30);
+                drawTriangle(gameWidth - 100, gameHeight - 30, gameWidth - 250, gameHeight - 200, gameWidth - 400, gameHeight - 30);
+
+                // Volcano
+                const volcanoBaseY = gameHeight - 30;
+                const volcanoHeight = gameHeight * 0.6;
+                const volcanoBaseWidth = gameWidth * 0.4;
+                const volcanoTopWidth = gameWidth * 0.1;
+                const volcanoBaseX = (gameWidth - volcanoBaseWidth) / 2;
+                
+                ctx.fillStyle = '#4B3A26'; // Dark Brown
+                ctx.beginPath();
+                ctx.moveTo(volcanoBaseX, volcanoBaseY);
+                ctx.lineTo(volcanoBaseX + (volcanoBaseWidth - volcanoTopWidth) / 2, volcanoBaseY - volcanoHeight);
+                ctx.lineTo(volcanoBaseX + (volcanoBaseWidth + volcanoTopWidth) / 2, volcanoBaseY - volcanoHeight);
+                ctx.lineTo(volcanoBaseX + volcanoBaseWidth, volcanoBaseY);
+                ctx.closePath();
+                ctx.fill();
+
+                // Lava on top
+                const craterY = volcanoBaseY - volcanoHeight;
+                const craterX = volcanoBaseX + (volcanoBaseWidth - volcanoTopWidth) / 2;
+                ctx.fillStyle = '#FF4500'; // Orange-Red
+                ctx.fillRect(craterX, craterY, volcanoTopWidth, 10);
+                
+                // Draw some lava dripping
+                ctx.fillStyle = '#FF4500';
+                ctx.fillRect(craterX + 10, craterY + 10, 8, 20);
+                ctx.fillRect(craterX + 30, craterY + 10, 10, 15);
+            }
+            
+            function drawTriangle(x1, y1, x2, y2, x3, y3) {
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.lineTo(x3, y3);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // --- Game Logic ---
+
+            function checkCollisions() {
+                fireballs.forEach((fireball, index) => {
+                    // Simple AABB collision detection
+                    if (
+                        player.x < fireball.x + fireball.width &&
+                        player.x + player.width > fireball.x &&
+                        player.y < fireball.y + fireball.height &&
+                        player.y + player.height > fireball.y
+                    ) {
+                        // Collision!
+                        fireballs.splice(index, 1); // Remove fireball
+                        lives--;
+                        updateUI();
+                        
+                        // Simple screen shake effect
+                        document.body.classList.add('shake');
+                        setTimeout(() => document.body.classList.remove('shake'), 200);
+
+                        if (lives <= 0) {
+                            endGame();
+                        }
+                    }
+                });
+            }
+
+            function updateUI() {
+                scoreEl.textContent = score;
+                livesEl.textContent = lives;
+            }
+
+            function showMessage(title, showScore = true) {
+                messageTitle.textContent = title;
+                if (showScore) {
+                    messageScore.textContent = `Final Score: ${score}`;
+                    messageScore.classList.remove('hidden');
+                } else {
+                    messageScore.classList.add('hidden');
+                }
+                startButton.textContent = title === 'Game Over' ? 'Play Again' : 'Start Game';
+                messageBox.classList.remove('hidden');
+            }
+
+            function hideMessage() {
+                messageBox.classList.add('hidden');
+            }
+
+            function init() {
+                // Set canvas size dynamically
+                const container = canvas.parentElement;
+                gameWidth = container.clientWidth;
+                gameHeight = container.clientHeight;
+                canvas.width = gameWidth;
+                canvas.height = gameHeight;
+
+                lives = 3;
+                score = 0;
+                gameRunning = false;
+                gameOver = false;
+                
+                initPlayer();
+                initFireballs();
+                updateUI();
+                
+                showMessage('Volcano Wrangler', false);
+            }
+
+            function startGame() {
+                hideMessage();
+                lives = 3;
+                score = 0;
+                gameRunning = true;
+                gameOver = false;
+                
+                initPlayer();
+                initFireballs();
+                updateUI();
+                
+                gameLoop();
+            }
+            
+            function endGame() {
+                gameRunning = false;
+                gameOver = true;
+                showMessage('Game Over', true);
+            }
+
+            function gameLoop() {
+                if (!gameRunning) return;
+
+                // Clear canvas
+                ctx.clearRect(0, 0, gameWidth, gameHeight);
+
+                // Draw
+                drawBackground();
+                drawPlayer();
+                drawFireballs();
+
+                // Update
+                const volcanoPeakX = gameWidth / 2;
+                const volcanoPeakY = (gameHeight - 30) - (gameHeight * 0.6);
+                
+                updatePlayer();
+                updateFireballs(volcanoPeakX, volcanoPeakY);
+                checkCollisions();
+                
+                // Increment score over time
+                score++;
+                updateUI();
+
+                // Request next frame
+                requestAnimationFrame(gameLoop);
+            }
+
+            // --- Event Listeners ---
+            function handleKeyDown(e) {
+                if (e.key === 'ArrowLeft' || e.key === 'a') {
+                    player.dx = -player.speed;
+                } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                    player.dx = player.speed;
+                }
+            }
+
+            function handleKeyUp(e) {
+                if (
+                    (e.key === 'ArrowLeft' || e.key === 'a') ||
+                    (e.key === 'ArrowRight' || e.key === 'd')
+                ) {
+                    player.dx = 0;
+                }
+            }
+            
+            // Touch controls
+            function handleTouchMove(e) {
+                e.preventDefault(); // Prevent screen scrolling
+                const touchX = e.touches[0].clientX;
+                const canvasRect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / canvasRect.width;
+                const playerCenter = player.x + player.width / 2;
+                const touchOnCanvasX = (touchX - canvasRect.left) * scaleX;
+                
+                const deadZone = player.width / 2; // Don't move if touch is near center
+
+                if (touchOnCanvasX < playerCenter - deadZone) {
+                    player.dx = -player.speed;
+                } else if (touchOnCanvasX > playerCenter + deadZone) {
+                    player.dx = player.speed;
+                } else {
+                    player.dx = 0; // Stop if touching near the middle
+                }
+            }
+
+            function handleTouchEnd(e) {
+                e.preventDefault();
+                player.dx = 0; // Stop moving when touch is released
+            }
+
+            // Global listeners
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchstart', handleTouchMove, { passive: false }); // Allow starting move on tap
+            canvas.addEventListener('touchend', handleTouchEnd);
+            canvas.addEventListener('touchcancel', handleTouchEnd);
+
+            startButton.addEventListener('click', startGame);
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                // We'll just re-initialize the game on resize for simplicity
+                // This stops the game, but ensures dimensions are correct
+                if (gameRunning) {
+                    endGame();
+                }
+                init();
+            });
+
+            // Initial setup
+            init();
+        });
+    </script>
+</body>
+</html>
